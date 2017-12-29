@@ -1,22 +1,11 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.pgmx.cloud.poc.poc1;
 
+import com.datastax.driver.core.Session;
+import com.datastax.spark.connector.cql.CassandraConnector;
+import com.datastax.spark.connector.japi.CassandraJavaUtil;
+import com.datastax.spark.connector.japi.CassandraStreamingJavaUtil;
+import org.apache.commons.lang.StringUtils;
+import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.Function2;
@@ -36,6 +25,22 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
+ * /*
+ * Demonstrates fetching records from a Kafka topic, processing the records, and persisting them to Cassandra
+ *
+ *
+ * <strong>Prerequisites</strong>
+ * <ul>
+ *     <li> Kafka running on localhost with 'testspark' topic
+ *     <li> Cassandra running on localhost with 'cloudtest' keyspace
+ * </ul>
+ *
+ * <em>Usage:</em>
+ *
+ * `$ spark-submit --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.2.0
+ * --class org.pgmx.cloud.poc.poc1.KafkaReaderTest target/poc1-1.0.jar`
+ *
+ * //FIXME modify rest
  * Consumes messages from one or more topics in Kafka and does wordcount.
  * <p>
  * Usage: JavaKafkaWordCount <zkQuorum> <group> <topics> <numThreads>
@@ -50,6 +55,8 @@ import java.util.regex.Pattern;
  */
 
 public final class KafkaReaderTest {
+
+    private static final Logger LOG = Logger.getLogger(KafkaReaderTest.class);
 
     private static final String ZK_HOST = "localhost:2181"; // FIXME
     private static final String IN_TOPIC = "testspark"; // FIXME
@@ -109,7 +116,6 @@ public final class KafkaReaderTest {
             // Store in a stateful ds
             JavaPairDStream<String, Integer> statefulMap = summarized.updateStateByKey(COMPUTE_RUNNING_SUM);
 
-            //summarized.print();
             statefulMap.print();
             jssc.start();
             jssc.awaitTermination();
@@ -148,4 +154,33 @@ public final class KafkaReaderTest {
             return new Tuple2(s.split(",")[relIndex], Integer.valueOf(1));
         }
     }
+
+
+    private static void persistInDB(JavaPairDStream<String, Integer> javaDStream, Class clazz, SparkConf conf, String org) {
+        LOG.info("- Will save in DB table: " + clazz.getSimpleName() + " -");
+        String keySpace = StringUtils.lowerCase("CloudPOC");
+        String tableName = StringUtils.lowerCase(clazz.getSimpleName());
+        String delQuery = "DELETE FROM " + keySpace + "." + tableName + " WHERE origin='" + org + "'";
+
+        CassandraConnector connector = CassandraConnector.apply(conf);
+        try (Session session = connector.openSession()) {
+            session.execute("CREATE KEYSPACE IF NOT EXISTS " + keySpace + " WITH replication = {'class': 'SimpleStrategy', " +
+                    "'replication_factor': 1}");
+            session.execute("CREATE TABLE IF NOT EXISTS " + keySpace + "." + tableName
+                    + " (airport text, freq double, primary key(airport))");
+
+//            javaDStream.foreachRDD(rdd -> {
+//                if (rdd.count() > 0) {
+//                    session.execute(delQuery);
+//                }
+//            });
+
+            Map<String, String> fieldToColumnMapping = new HashMap<>();
+            fieldToColumnMapping.put("airport", "airport");
+            fieldToColumnMapping.put("count", "freq");
+            //CassandraStreamingJavaUtil.javaFunctions(javaDStream).writerBuilder(keySpace, tableName,
+            //        CassandraJavaUtil.mapToRow(OriginDestDepDelayKey.class, fieldToColumnMapping)).saveToCassandra();
+        }
+    }
+
 }
