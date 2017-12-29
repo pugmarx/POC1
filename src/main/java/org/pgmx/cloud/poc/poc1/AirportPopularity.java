@@ -25,11 +25,25 @@ import scala.Tuple2;
 import java.util.*;
 
 /**
- * Group 1 Q1
+ * Demonstrates fetching records from a Kafka topic, processing the records, and persisting them to Cassandra
+ *
+ *
+ * <strong>Prerequisites</strong>
+ * <ul>
+ *     <li> Kafka running on localhost with 'testspark' topic
+ *     <li> Cassandra running on localhost with 'cloudpoc' keyspace
+ * </ul>
+ *
+ * <em>Usage:</em>
+ * `$ spark-submit
+ * --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.2.0,datastax:spark-cassandra-connector:2.0.5-s_2.11
+ * --class org.pgmx.cloud.poc.poc1.AirportPopularity target/poc1-1.0.jar`
+ *
  */
 public final class AirportPopularity {
 
     private static final Logger LOG = Logger.getLogger(AirportPopularity.class);
+    private static final String CASSANDRA_KEYSPACE = "cloudpoc";
 
     private AirportPopularity() {
     }
@@ -79,21 +93,6 @@ public final class AirportPopularity {
             // Pick the messages
             JavaDStream<String> lines = messages.map(Tuple2::_2);
 
-//            JavaPairDStream<String, Integer> origins = lines.mapToPair(new RelevantIndexFetcher(AirConstants.ORIGIN_INDEX));
-//            JavaPairDStream<String, Integer> destinations = lines.mapToPair(new RelevantIndexFetcher(AirConstants.DEST_INDEX));
-//            JavaPairDStream<String, Integer> allRecs = origins.union(destinations);
-
-//            JavaPairDStream<String, Integer>  airports = lines.flatMapToPair(new PairFlatMapFunction<String, String, Integer>() {
-//                @Override
-//                public Iterator<Tuple2<String, Integer>> call(String s) throws Exception {
-//                    String a[] = s.split(",");
-//                    List<Tuple2<String, Integer>> apFreq = new ArrayList<>();
-//                    apFreq.add(new Tuple2<>(a[AirConstants.ORIGIN_INDEX],1));
-//                    apFreq.add(new Tuple2<>(a[AirConstants.DEST_INDEX],1));
-//                    return apFreq.iterator();
-//                }
-//            });
-
             // Use flatMap to parse the incoming stream (each line would return 2 pairs)
             JavaPairDStream<String, Integer> allRecs = lines.flatMapToPair((s) -> {
                     String a[] = s.split(",");
@@ -102,7 +101,6 @@ public final class AirportPopularity {
                     apFreq.add(new Tuple2<>(a[AirConstants.DEST_INDEX],1));
                     return apFreq.iterator();
             });
-
 
             JavaPairDStream<String, Integer> summarized = allRecs.reduceByKey((i1, i2) -> i1 + i2);
 
@@ -118,7 +116,7 @@ public final class AirportPopularity {
             // **** Print top 10 from sorted map ***
             sortedAirports.print(10);
 
-            // Persist! //TODO restrict to 10?
+            // Persist!
             //AirHelper.persist(sortedAirports, AirportPopularity.class);
             persistInDB(sortedAirports, AirportPopularity.class, sparkConf);
 
@@ -155,16 +153,7 @@ public final class AirportPopularity {
         }
     }
 
-    @SuppressWarnings("unused")
-    /**
-     * Can be used to return a non pair-RDD
-     */
-    static class Transformer implements Function<Tuple2<String, Integer>, AirportKey> {
-        @Override
-        public AirportKey call(Tuple2<String, Integer> entry) throws Exception {
-            return new AirportKey(entry._1(), entry._2());
-        }
-    }
+
 
     // List of incoming vals, currentVal, returnVal
     private static Function2<List<Integer>, Optional<Integer>, Optional<Integer>>
@@ -178,7 +167,7 @@ public final class AirportPopularity {
 
     private static void persistInDB(JavaDStream<AirportKey> javaDStream, Class clazz, SparkConf conf) {
         LOG.info("- Will save in DB table: " + clazz.getSimpleName() + " -");
-        String keySpace = StringUtils.lowerCase("cloudpoc");
+        String keySpace = StringUtils.lowerCase(CASSANDRA_KEYSPACE);
         String tableName = StringUtils.lowerCase(clazz.getSimpleName());
 
         CassandraConnector connector = CassandraConnector.apply(conf);
