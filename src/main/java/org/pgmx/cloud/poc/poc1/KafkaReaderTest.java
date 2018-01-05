@@ -40,18 +40,6 @@ import java.util.regex.Pattern;
  * `$ spark-submit --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.2.0
  * --class org.pgmx.cloud.poc.poc1.KafkaReaderTest target/poc1-1.0.jar`
  *
- * //FIXME modify rest
- * Consumes messages from one or more topics in Kafka and does wordcount.
- * <p>
- * Usage: JavaKafkaWordCount <zkQuorum> <group> <topics> <numThreads>
- * <zkQuorum> is a list of one or more zookeeper servers that make quorum
- * <group> is the name of kafka consumer group
- * <topics> is a list of one or more kafka topics to consume from
- * <numThreads> is the number of threads the kafka consumer should use
- * <p>
- * To run this example:
- * `$ bin/run-example org.apache.spark.examples.streaming.JavaKafkaWordCount zoo01,zoo02, \
- * zoo03 my-consumer-group topic1,topic2 1`
  */
 
 public final class KafkaReaderTest {
